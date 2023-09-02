@@ -216,11 +216,15 @@ static bool foo_is_supported_system_table(const char *db,
   handler::ha_open() in handler.cc
 */
 
-int ha_foo::open(const char *, int, uint, const dd::Table *) {
+int ha_foo::open(const char *name, int, uint, const dd::Table *) {
   DBUG_TRACE;
 
   if (!(share = get_share())) return 1;
   thr_lock_data_init(&share->lock, &lock, nullptr);
+
+  // TODO: 別の箇所で FD を読み書きするときはロックが必要ではないか?
+  data_file = my_open(name, O_RDWR, MYF(0));
+  if (data_file == -1) return 1;
 
   return 0;
 }
