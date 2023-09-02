@@ -3,10 +3,12 @@
 run:
 	docker run --rm -dit --name mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -v $(PWD)/../../build/plugin_output_directory/:/usr/lib64/mysql/plugin:ro mysql:8.1.0
 
-.PHONY: install
-install:
+.PHONY: test
+test:
 	docker exec -it mysql mysql -e "INSTALL PLUGIN foo SONAME 'ha_foo.so';"
 	docker exec -it mysql mysql -e "SHOW ENGINES;" | grep -e FOO -e Engine
+	docker exec -it mysql mysql -e "CREATE DATABASE db;"
+	docker exec -it mysql mysql -e "CREATE TABLE db.tbl(id INT, name VARCHAR(255)) ENGINE=foo;"
 
 .PHONY: exec
 exec:

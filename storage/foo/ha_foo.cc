@@ -741,23 +741,14 @@ static MYSQL_THDVAR_UINT(create_count_thdvar, 0, nullptr, nullptr, nullptr, 0,
 int ha_foo::create(const char *name, TABLE *, HA_CREATE_INFO *,
                        dd::Table *) {
   DBUG_TRACE;
-  /*
-    This is not implemented but we want someone to be able to see that it
-    works.
-  */
 
-  /*
-    It's just an foo of THDVAR_SET() usage below.
-  */
-  THD *thd = ha_thd();
-  char *buf = (char *)my_malloc(PSI_NOT_INSTRUMENTED, SHOW_VAR_FUNC_BUFF_SIZE,
-                                MYF(MY_FAE));
-  snprintf(buf, SHOW_VAR_FUNC_BUFF_SIZE, "Last creation '%s'", name);
-  THDVAR_SET(thd, last_create_thdvar, buf);
-  my_free(buf);
-
-  uint count = THDVAR(thd, create_count_thdvar) + 1;
-  THDVAR_SET(thd, create_count_thdvar, &count);
+  const File table_file = my_create(name, 0, O_RDWR, MYF(0));
+  if(table_file == -1) {
+    return -1;
+  }
+  if(my_close(table_file, MYF(0)) == -1) {
+    return -1;
+  }
 
   return 0;
 }
