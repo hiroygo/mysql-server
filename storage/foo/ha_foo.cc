@@ -156,7 +156,8 @@ static handler *foo_create_handler(handlerton *hton, TABLE_SHARE *table,
 }
 
 ha_foo::ha_foo(handlerton *hton, TABLE_SHARE *table_arg)
-    : handler(hton, table_arg) {}
+    : handler(hton, table_arg), share(nullptr), data_file(-1) {
+    }
 
 /*
   List of all system tables specific to the SE.
