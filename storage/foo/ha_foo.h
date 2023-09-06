@@ -64,7 +64,7 @@ class ha_foo : public handler {
   THR_LOCK_DATA lock;          ///< MySQL lock
   Foo_share *share;        ///< Shared lock info
   Foo_share *get_share();  ///< Get the share
-  File data_file;
+  File data;
 
  public:
   ha_foo(handlerton *hton, TABLE_SHARE *table_arg);

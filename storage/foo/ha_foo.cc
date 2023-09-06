@@ -156,7 +156,7 @@ static handler *foo_create_handler(handlerton *hton, TABLE_SHARE *table,
 }
 
 ha_foo::ha_foo(handlerton *hton, TABLE_SHARE *table_arg)
-    : handler(hton, table_arg), share(nullptr), data_file(-1) {
+    : handler(hton, table_arg), share(nullptr), data(-1) {
     }
 
 /*
@@ -223,9 +223,8 @@ int ha_foo::open(const char *name, int, uint, const dd::Table *) {
   if (!(share = get_share())) return 1;
   thr_lock_data_init(&share->lock, &lock, nullptr);
 
-  // TODO: 別の箇所で FD を読み書きするときはロックが必要ではないか?
-  data_file = my_open(name, O_RDWR, MYF(0));
-  if (data_file == -1) return 1;
+  data = my_open(name, O_RDWR, MYF(0));
+  if (data == -1) return 1;
 
   return 0;
 }
