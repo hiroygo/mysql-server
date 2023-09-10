@@ -1,7 +1,7 @@
 # マウント先は `SELECT @@plugin_dir;` して確認した
 .PHONY: run
 run:
-	docker run --rm -dit --name mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -v $(PWD)/../../build/plugin_output_directory/:/usr/lib64/mysql/plugin:ro mysql:8.1.0
+	docker run --rm -dit --name mysql -v $(PWD)/../../build/plugin_output_directory/:/usr/lib64/mysql/plugin:ro -e MYSQL_ALLOW_EMPTY_PASSWORD=yes mysql:8.1.0 --disable-log-bin
 
 .PHONY: test
 test:
