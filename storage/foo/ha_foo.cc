@@ -100,6 +100,8 @@
 #include "sql/sql_class.h"
 #include "sql/sql_plugin.h"
 #include "typelib.h"
+#include "sql/table.h"
+#include "sql/field.h"
 
 static handler *foo_create_handler(handlerton *hton, TABLE_SHARE *table,
                                        bool partitioned, MEM_ROOT *mem_root);
@@ -258,6 +260,71 @@ int ha_foo::close(void) {
   return 0;
 }
 
+// ha_tina::encode_quote からのコピー
+String ha_foo::encode_quote() {
+  String record;
+
+  // カラム情報を読み取るためのフラグを立てています。 これを立てておかないと、後で field 変数から情報を取得する際にアサーションで落ちてしまいます
+  my_bitmap_map *org_bitmap = dbug_tmp_use_all_columns(table, table->read_set);
+
+  char attribute_buffer[1024];
+  String attribute(attribute_buffer, sizeof(attribute_buffer), &my_charset_bin);
+  for (Field **field = table->field; *field; field++) {
+    const char *ptr;
+    const char *end_ptr;
+    const bool was_null = (Field*)(*field)->is_null();
+
+    /*
+      assistance for backwards compatibility in production builds.
+      note: this will not work for ENUM columns.
+    */
+    if (was_null) {
+      (*field)->set_default();
+      (*field)->set_notnull();
+    }
+
+    (*field)->val_str(&attribute, &attribute);
+
+    if (was_null) (*field)->set_null();
+
+    if ((*field)->str_needs_quotes()) {
+      ptr = attribute.ptr();
+      end_ptr = attribute.length() + ptr;
+
+      record.append('"');
+
+      for (; ptr < end_ptr; ptr++) {
+        if (*ptr == '"') {
+          record.append('\\');
+          record.append('"');
+        } else if (*ptr == '\r') {
+          record.append('\\');
+          record.append('r');
+        } else if (*ptr == '\\') {
+          record.append('\\');
+          record.append('\\');
+        } else if (*ptr == '\n') {
+          record.append('\\');
+          record.append('n');
+        } else
+          record.append(*ptr);
+      }
+      record.append('"');
+    } else {
+      record.append(attribute);
+    }
+
+    record.append(',');
+  }
+  // Remove the comma, add a line feed
+  record.length(record.length() - 1);
+  record.append('\n');
+
+  dbug_tmp_restore_column_map(table->read_set, org_bitmap);
+
+  return record;
+}
+
 /**
   @brief
   write_row() inserts a row. No extra() hint is given currently if a bulk load
@@ -291,13 +358,16 @@ int ha_foo::close(void) {
 int ha_foo::write_row(uchar *) {
   DBUG_TRACE;
 
-  ha_statistic_increment(&System_status_var::ha_write_count);
-
   if (data == -1) {
     return 1;
   }
+  
   // INSERT するために fd をファイル末尾に移動させる
   if (my_seek(data, 0L, SEEK_END, MYF(0)) == MY_FILEPOS_ERROR) {
+    return 1;
+  }
+  const String record = encode_quote();
+  if ((my_write(data, (const uchar*)record.ptr(), record.length(), MYF_RW)) == MY_FILE_ERROR) {
     return 1;
   }
 

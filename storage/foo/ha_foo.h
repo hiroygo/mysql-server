@@ -66,6 +66,9 @@ class ha_foo : public handler {
   Foo_share *get_share();  ///< Get the share
   File data;
 
+ private:
+  String encode_quote();
+
  public:
   ha_foo(handlerton *hton, TABLE_SHARE *table_arg);
   ~ha_foo() override = default;
