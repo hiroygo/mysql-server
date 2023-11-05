@@ -226,15 +226,6 @@ int ha_foo::open(const char *name, int, uint, const dd::Table *) {
   data = my_open(name, O_RDWR, MYF(0));
   if (data == -1) return 1;
 
-  // logging
-  if (my_seek(data, 0L, SEEK_END, MYF(0)) == MY_FILEPOS_ERROR) {
-    return 1;
-  }
-  const std::string msg{"ha_foo::open\n"};
-  if ((my_write(data, (const uchar*)msg.c_str(), msg.length(), MYF_RW)) == MY_FILE_ERROR) {
-    return 1;
-  }
-
   return 0;
 }
 
@@ -257,15 +248,6 @@ int ha_foo::close(void) {
   DBUG_TRACE;
 
   if (data == -1) {
-    return 1;
-  }
-
-  // logging
-  if (my_seek(data, 0L, SEEK_END, MYF(0)) == MY_FILEPOS_ERROR) {
-    return 1;
-  }
-  const std::string msg{"ha_foo::close\n"};
-  if ((my_write(data, (const uchar*)msg.c_str(), msg.length(), MYF_RW)) == MY_FILE_ERROR) {
     return 1;
   }
 
@@ -316,12 +298,6 @@ int ha_foo::write_row(uchar *) {
   }
   // INSERT するために fd をファイル末尾に移動させる
   if (my_seek(data, 0L, SEEK_END, MYF(0)) == MY_FILEPOS_ERROR) {
-    return 1;
-  }
-
-  // logging
-  const std::string msg{"ha_foo::write_row\n"};
-  if ((my_write(data, (const uchar*)msg.c_str(), msg.length(), MYF_RW)) == MY_FILE_ERROR) {
     return 1;
   }
 
@@ -714,18 +690,6 @@ THR_LOCK_DATA **ha_foo::store_lock(THD *, THR_LOCK_DATA **to,
 */
 int ha_foo::delete_table(const char *name, const dd::Table *) {
   DBUG_TRACE;
-
-  // logging
-  const File table_file = my_open(name, O_RDWR | O_APPEND, MYF(0));
-  if (table_file == -1) return 1;
-  const std::string msg{"ha_foo::delete_table\n"};
-  if ((my_write(table_file, (const uchar*)msg.c_str(), msg.length(), MYF_RW)) == MY_FILE_ERROR) {
-    return 1;
-  }
-  if(my_close(table_file, MYF(0)) == -1) {
-    return -1;
-  }
-
   return 0;
 }
 
@@ -799,12 +763,6 @@ int ha_foo::create(const char *name, TABLE *, HA_CREATE_INFO *,
   const File table_file = my_create(name, 0, O_RDWR, MYF(0));
   if(table_file == -1) {
     return -1;
-  }
-
-  // logging
-  const std::string msg{"ha_foo::create\n"};
-  if ((my_write(table_file, (const uchar*)msg.c_str(), msg.length(), MYF_RW)) == MY_FILE_ERROR) {
-    return 1;
   }
 
   if(my_close(table_file, MYF(0)) == -1) {
