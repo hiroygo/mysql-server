@@ -64,10 +64,12 @@ class ha_foo : public handler {
   THR_LOCK_DATA lock;          ///< MySQL lock
   Foo_share *share;        ///< Shared lock info
   Foo_share *get_share();  ///< Get the share
-  File data;
+  File data; // データファイルを読み書きするファイルディスクリプタ。SELECT と INSERT で利用する
+  off_t read_row_field_position; // SELECT 時に利用する
 
  private:
-  String encode_quote();
+  String create_row();
+  int read_row(uchar *);
 
  public:
   ha_foo(handlerton *hton, TABLE_SHARE *table_arg);

@@ -158,7 +158,7 @@ static handler *foo_create_handler(handlerton *hton, TABLE_SHARE *table,
 }
 
 ha_foo::ha_foo(handlerton *hton, TABLE_SHARE *table_arg)
-    : handler(hton, table_arg), share(nullptr), data(-1) {
+    : handler(hton, table_arg), share(nullptr), data(-1), read_row_field_position(-1) {
     }
 
 /*
@@ -261,17 +261,15 @@ int ha_foo::close(void) {
 }
 
 // ha_tina::encode_quote からのコピー
-String ha_foo::encode_quote() {
-  String record;
+String ha_foo::create_row() {
+  String row;
 
   // カラム情報を読み取るためのフラグを立てています。 これを立てておかないと、後で field 変数から情報を取得する際にアサーションで落ちてしまいます
   my_bitmap_map *org_bitmap = dbug_tmp_use_all_columns(table, table->read_set);
 
-  char attribute_buffer[1024];
-  String attribute(attribute_buffer, sizeof(attribute_buffer), &my_charset_bin);
   for (Field **field = table->field; *field; field++) {
-    const char *ptr;
-    const char *end_ptr;
+    char attribute_buffer[1024];
+    String attribute(attribute_buffer, sizeof(attribute_buffer), &my_charset_bin);
     const bool was_null = (Field*)(*field)->is_null();
 
     /*
@@ -285,44 +283,19 @@ String ha_foo::encode_quote() {
 
     (*field)->val_str(&attribute, &attribute);
 
-    if (was_null) (*field)->set_null();
-
-    if ((*field)->str_needs_quotes()) {
-      ptr = attribute.ptr();
-      end_ptr = attribute.length() + ptr;
-
-      record.append('"');
-
-      for (; ptr < end_ptr; ptr++) {
-        if (*ptr == '"') {
-          record.append('\\');
-          record.append('"');
-        } else if (*ptr == '\r') {
-          record.append('\\');
-          record.append('r');
-        } else if (*ptr == '\\') {
-          record.append('\\');
-          record.append('\\');
-        } else if (*ptr == '\n') {
-          record.append('\\');
-          record.append('n');
-        } else
-          record.append(*ptr);
-      }
-      record.append('"');
-    } else {
-      record.append(attribute);
+    if (was_null) {
+      (*field)->set_null();
     }
 
-    record.append(',');
+    row.append(attribute);
+    row.append(',');
   }
-  // Remove the comma, add a line feed
-  record.length(record.length() - 1);
-  record.append('\n');
+  row.length(row.length() - 1);
+  row.append('\n');
 
   dbug_tmp_restore_column_map(table->read_set, org_bitmap);
 
-  return record;
+  return row;
 }
 
 /**
@@ -366,8 +339,8 @@ int ha_foo::write_row(uchar *) {
   if (my_seek(data, 0L, SEEK_END, MYF(0)) == MY_FILEPOS_ERROR) {
     return 1;
   }
-  const String record = encode_quote();
-  if ((my_write(data, (const uchar*)record.ptr(), record.length(), MYF_RW)) == MY_FILE_ERROR) {
+  const String row = create_row();
+  if ((my_write(data, (const uchar*)row.ptr(), row.length(), MYF_RW)) == MY_FILE_ERROR) {
     return 1;
   }
 
@@ -517,12 +490,44 @@ int ha_foo::index_last(uchar *) {
 */
 int ha_foo::rnd_init(bool) {
   DBUG_TRACE;
+  read_row_field_position = 0;
+  stats.records = 0;
   return 0;
 }
 
 int ha_foo::rnd_end() {
   DBUG_TRACE;
   return 0;
+}
+
+int ha_foo::read_row(uchar *buf) {
+  DBUG_TRACE;
+
+  my_bitmap_map *org_bitmap = tmp_use_all_columns(table, table->write_set);
+  memset(buf, 0, table->s->null_bytes);
+
+  uchar field_buffer[IO_SIZE];
+  for (Field **field = table->field; *field; field++) {
+    const size_t field_read = my_pread(data, field_buffer, sizeof(field_buffer), read_row_field_position, MYF(0));
+    if (!field_read) {
+      tmp_restore_column_map(table->write_set, org_bitmap);
+      return HA_ERR_END_OF_FILE;
+    }
+
+    String value = String();
+    for (size_t i = 0; i < field_read; i++) {
+      const char ch = *(field_buffer + i);
+      if (ch == ',' || ch == '\n') {
+          break;
+      }
+      value.append(ch);
+    }
+    (*field)->store(value.ptr(), value.length(), value.charset());
+    read_row_field_position += value.length() + 1; // +1 は '\n' か ','
+  }
+
+  tmp_restore_column_map(table->write_set, org_bitmap);
+  return 0; // まだ行が存在するので 0 を返して処理を継続させる
 }
 
 /**
@@ -540,11 +545,15 @@ int ha_foo::rnd_end() {
   filesort.cc, records.cc, sql_handler.cc, sql_select.cc, sql_table.cc and
   sql_update.cc
 */
-int ha_foo::rnd_next(uchar *) {
-  int rc;
+int ha_foo::rnd_next(uchar *buf) {
   DBUG_TRACE;
-  rc = HA_ERR_END_OF_FILE;
-  return rc;
+
+  const int ret = read_row(buf);
+  if(!ret) {
+    stats.records++;
+  }
+
+  return ret;
 }
 
 /**
@@ -631,6 +640,9 @@ int ha_foo::rnd_pos(uchar *, uchar *) {
 */
 int ha_foo::info(uint) {
   DBUG_TRACE;
+  if (stats.records < 2) {
+    stats.records= 2;
+  }
   return 0;
 }
 
@@ -758,7 +770,7 @@ THR_LOCK_DATA **ha_foo::store_lock(THD *, THR_LOCK_DATA **to,
   @see
   delete_table and ha_create_table() in handler.cc
 */
-int ha_foo::delete_table(const char *name, const dd::Table *) {
+int ha_foo::delete_table(const char *, const dd::Table *) {
   DBUG_TRACE;
   return 0;
 }
